@@ -1,1 +1,3 @@
 ./pretrain
+./test_diff/save_npy
+./output

@@ -7,6 +7,12 @@ from typing import Optional
 from paddle import Tensor
 import numpy as np
 
+import sys
+sys.path.append("/data/xiaoqihang/myproject/SPTS_Paddle")
+from reprod_log import ReprodDiffHelper, ReprodLogger
+diff_helper = ReprodDiffHelper()
+reprod_logger = ReprodLogger()
+
 weight_attr = paddle.framework.ParamAttr(initializer=paddle.nn.initializer.XavierUniform())
 bias_attr = paddle.framework.ParamAttr(initializer=paddle.nn.initializer.XavierUniform())
 
@@ -39,28 +45,62 @@ class Transformer(nn.Layer):
         # flatten NxCxHxW to HWxNxC
         bs, c, h, w = src.shape
         src = src.flatten(2).transpose([0, 2, 1])
+        
+        diff_helper.compare_info({"after_input_proj":src.numpy()}, {"after_input_proj":np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/a_i.npy")})
+        diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
+
         pos_embed = pos_embed.flatten(2).transpose([0, 2, 1])
         mask = mask.reshape([mask.shape[0], -1])
+        
+        ###################################
+        masks = paddle.zeros(mask.shape)
+        masks[mask] = float('-inf')# bool转为inf
+        mask = masks
+        ###################################
+        
         if self.num_encoder_layers > 0:
             memory = self.encoder(src, src_key_padding_mask=mask, pos=pos_embed.astype("float16"))
         else:
             memory = src
 
+        diff_helper.compare_info({"after_encoder":memory.numpy()}, {"after_encoder":np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/a_e.npy")})
+        diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
+
+
         query_embed = self.embedding.position_embeddings.weight.unsqueeze(0)
         query_embed = paddle.concat([query_embed for _ in range(bs)], axis=1)
         if self.training:
             tgt = self.embedding(seq)
+            
+            diff_helper.compare_info({"after_decoder_embed":tgt.numpy()}, 
+                                        {"after_decoder_embed":np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/a_d_emb.npy")})
+            diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
+
             hs = self.decoder(tgt, memory, memory_key_padding_mask=mask,
                           pos=pos_embed, query_pos=query_embed[:, :tgt.shape[1], :],
                           tgt_mask=generate_square_subsequent_mask(tgt.shape[1]))
+            
+            diff_helper.compare_info({"after_decoder":hs.numpy()}, {"after_decoder":np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/a_d.npy")})
+            diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
+
             return vocab_embed(hs)
         else:
             probs = []
             for i in range(self.max_position_embeddings):
                 tgt = self.embedding(seq)
+
+                diff_helper.compare_info({"after_decoder_embed":tgt.numpy()}, 
+                                         {"after_decoder_embed":np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/a_d_emb.npy")})
+                diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
+
                 hs = self.decoder(tgt, memory, memory_key_padding_mask=mask,
                           pos=pos_embed, query_pos=query_embed[:, :i+1, :],
                           tgt_mask=generate_square_subsequent_mask(i+1))
+
+                # # print(hs)
+                diff_helper.compare_info({"after_decoder":hs.numpy()}, {"after_decoder":np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/a_d.npy")})
+                diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
+
                 out = vocab_embed(hs[:, -1, :])
                 out = F.softmax(out)
 
@@ -93,12 +133,11 @@ class DecoderEmbeddings(nn.Layer):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
-        # #号内是实验
         input_shape = x.shape
-        seq_length = input_shape[0]
+        seq_length = input_shape[1]
 
         position_ids = paddle.arange(seq_length)
-        position_ids = position_ids.unsqueeze(1).expand(input_shape)
+        position_ids = position_ids.unsqueeze(0).expand(input_shape)
 
         input_embeds = self.word_embeddings(x)
         position_embeds = self.position_embeddings(position_ids)
@@ -114,7 +153,7 @@ def generate_square_subsequent_mask(sz):
     r"""Generate a square mask for the sequence. The masked positions are filled with float('-inf').
         Unmasked positions are filled with float(0.0).
     """
-    mask = (paddle.triu(paddle.ones([sz, sz])) == 1)
+    mask = (paddle.triu(paddle.ones([sz, sz])) == 1).transpose([1, 0])
     masks = paddle.zeros(mask.shape).astype('float32')
     masks[~mask] = float('-inf')
     return masks
@@ -228,7 +267,23 @@ class TransformerEncoderLayer(nn.Layer):
                     pos: Optional[Tensor] = None):
         src2 = self.norm1(src)
         q = k = self.with_pos_embed(src2, pos)
-        src2 = self.self_attn(query=q, key=k, value=src2, attn_mask=src_mask)
+        
+        
+        diff_helper.compare_info({"bef_en_attn_v":src2.numpy()}, {"bef_en_attn_v":np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/en_bef_attn_value.npy")})
+        diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
+
+        diff_helper.compare_info({"bef_en_attn_q":q.numpy()}, {"bef_en_attn_q":np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/en_bef_attn_query.npy")})
+        diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
+
+        bs, km_len = src_key_padding_mask.shape
+        km2attn_mask = paddle.expand(src_key_padding_mask, 
+                                                       [self.self_attn.num_heads, bs, km_len])
+        src2 = self.self_attn(query=q, key=k, value=src2, attn_mask=src_key_padding_mask)
+        # src2 = self.self_attn(query=q, key=k, value=src2, attn_mask=src_mask)
+        
+        diff_helper.compare_info({"aft_en_attn_v":src2.numpy()}, {"aft_en_attn_v":np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/en_aft_attn_value.npy")})
+        diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
+
         src = src + self.dropout1(src2)
         src2 = self.norm2(src)
         src2 = self.linear1(src2)
@@ -270,6 +325,12 @@ class TransformerDecoderLayer(nn.Layer):
 
     def with_pos_embed(self, tensor, pos: Optional[Tensor]):
         return tensor if pos is None else tensor + pos
+        # if pos is None:
+        #     return tensor
+        # else:
+        #     # print(tensor)
+        #     # print(pos)
+        #     return tensor + pos
 
     def forward_post(self, tgt, memory,
                      tgt_mask: Optional[Tensor] = None,
@@ -303,17 +364,40 @@ class TransformerDecoderLayer(nn.Layer):
                     query_pos: Optional[Tensor] = None):
         tgt2 = self.norm1(tgt)
         q = k = self.with_pos_embed(tgt2, query_pos)
-        tgt2 = self.self_attn(q, k, value=tgt2)
+        
+        diff_helper.compare_info({"bef_de_self_attn_q":q.numpy()}, {"bef_de_self_attn_q":np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/de_bef_self_attn_q.npy")})
+        diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
+
+        diff_helper.compare_info({"bef_de_self_attn_v":tgt2.numpy()}, {"bef_de_self_attn_v":np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/de_bef_self_attn_v.npy")})
+        diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
+
+        tgt2 = self.self_attn(q, k, value=tgt2, attn_mask=tgt_mask)
+        
+        diff_helper.compare_info({"aft_de_self_attn_v":tgt2.numpy()}, {"aft_de_self_attn_v":np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/de_aft_self_attn_v.npy")})
+        diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
+
         tgt = tgt + self.dropout1(tgt2)
         tgt2 = self.norm2(tgt)
         
         query=self.with_pos_embed(tgt2, query_pos)
         key=self.with_pos_embed(memory, pos)
         value=memory
-        attn_mask=memory_mask
+        attn_mask=memory_key_padding_mask
+        
+        diff_helper.compare_info({"bef_de_cros_attn_q":query.numpy()}, {"bef_de_cros_attn_q":np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/de_bef_cros_attn_q.npy")})
+        diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
+
+        diff_helper.compare_info({"bef_de_cros_attn_k":key.numpy()}, {"bef_de_cros_attn_k":np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/de_bef_cros_attn_k.npy")})
+        diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
+
+        diff_helper.compare_info({"bef_de_cros_attn_v":value.numpy()}, {"bef_de_cros_attn_v":np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/de_bef_cros_attn_v.npy")})
+        diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
         
         tgt2 = self.multihead_attn(query=query, key=key, value=value, attn_mask=attn_mask)
         
+        diff_helper.compare_info({"aft_de_cros_attn_v":tgt2.numpy()}, {"aft_de_cros_attn_v":np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/de_aft_cros_attn_v.npy")})
+        diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
+
         tgt = tgt + self.dropout2(tgt2)
         tgt2 = self.norm3(tgt)
         tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt2))))
