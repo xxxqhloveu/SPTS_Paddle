@@ -312,7 +312,7 @@ def include_in_dictionary_transcription(transcription):
         transcription = transcription[0:len(transcription)-2]
     #hypens at init or final of the word
     transcription = transcription.strip('-');            
-    specialCharacters = str("'!?.:,*\"()·[]/");
+    specialCharacters = str("'!?.:,*\"()·[]/")
     for character in specialCharacters:
         transcription = transcription.replace(character,' ')
     transcription = transcription.strip()

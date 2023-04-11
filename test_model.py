@@ -9,7 +9,7 @@ import paddle.nn.functional as F
 # from ppocr.modeling.backbones import build_backbone
 import numpy as np
 from test_transformer import Transformer
-sys.path.append("/data/xiaoqihang/myproject/SPTS_Paddle")
+sys.path.append("./")
 from reprod_log import ReprodDiffHelper, ReprodLogger
 diff_helper = ReprodDiffHelper()
 reprod_logger = ReprodLogger()
@@ -102,8 +102,8 @@ class SPTS(nn.Layer):
         img, seq = data['image'], data['sequence']
         outputs = self.backbone(img)
         
-        diff_helper.compare_info({"after_backbone":outputs.numpy()}, {"after_backbone":np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/a_b.npy")})
-        diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
+        # diff_helper.compare_info({"after_backbone":outputs.numpy()}, {"after_backbone":np.load("./test_diff/save_npy/a_b.npy")})
+        # diff_helper.report(path="./test_diff/save_npy/ab_diff.log", diff_threshold=1e-5)
 
         outputs = self.input_proj(outputs)
 
