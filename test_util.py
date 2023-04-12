@@ -299,46 +299,110 @@ def save_model(model,
         logger.info("save model in {}".format(model_prefix))
 
 
-def build_lr_scheduler(lr_config, epochs, step_each_epoch):
-    import learning_rate
-    lr_config.update({'epochs': epochs, 'step_each_epoch': step_each_epoch})
-    lr_name = lr_config.pop('name', 'Const')
-    lr = getattr(learning_rate, lr_name)(**lr_config)()
-    return lr
+# def build_lr_scheduler(lr_config, epochs, step_each_epoch):
+#     import learning_rate
+#     lr_config.update({'epochs': epochs, 'step_each_epoch': step_each_epoch})
+#     lr_name = lr_config.pop('name', 'Const')
+#     lr = getattr(learning_rate, lr_name)(**lr_config)()
+#     return lr
 
 
-def build_optimizer(config, epochs, step_each_epoch, model):
-    import regularizer, optimizer
-    config = copy.deepcopy(config)
-    # step1 build lr
-    lr = build_lr_scheduler(config.pop('lr'), epochs, step_each_epoch)
+# def build_optimizer(config, epochs, step_each_epoch, model):
+#     import regularizer, optimizer
+#     config = copy.deepcopy(config)
+#     # step1 build lr
+#     lr = build_lr_scheduler(config.pop('lr'), epochs, step_each_epoch)
 
-    # step2 build regularization
-    if 'regularizer' in config and config['regularizer'] is not None:
-        reg_config = config.pop('regularizer')
-        reg_name = reg_config.pop('name')
-        if not hasattr(regularizer, reg_name):
-            reg_name += 'Decay'
-        reg = getattr(regularizer, reg_name)(**reg_config)()
-    elif 'weight_decay' in config:
-        reg = config.pop('weight_decay')
-    else:
-        reg = None
+#     # step2 build regularization
+#     if 'regularizer' in config and config['regularizer'] is not None:
+#         reg_config = config.pop('regularizer')
+#         reg_name = reg_config.pop('name')
+#         if not hasattr(regularizer, reg_name):
+#             reg_name += 'Decay'
+#         reg = getattr(regularizer, reg_name)(**reg_config)()
+#     elif 'weight_decay' in config:
+#         reg = config.pop('weight_decay')
+#     else:
+#         reg = None
 
-    # step3 build optimizer
-    optim_name = config.pop('name')
-    if 'clip_norm' in config:
-        clip_norm = config.pop('clip_norm')
-        grad_clip = paddle.nn.ClipGradByNorm(clip_norm=clip_norm)
-    elif 'clip_norm_global' in config:
-        clip_norm = config.pop('clip_norm_global')
-        grad_clip = paddle.nn.ClipGradByGlobalNorm(clip_norm=clip_norm)
-    else:
-        grad_clip = None
-    optim = getattr(optimizer, optim_name)(learning_rate=lr,
-                                           weight_decay=reg,
-                                           grad_clip=grad_clip,
-                                           **config)
-    return optim(model), lr
+#     # step3 build optimizer
+#     optim_name = config.pop('name')
+#     if 'clip_norm' in config:
+#         clip_norm = config.pop('clip_norm')
+#         grad_clip = paddle.nn.ClipGradByNorm(clip_norm=clip_norm)
+#     elif 'clip_norm_global' in config:
+#         clip_norm = config.pop('clip_norm_global')
+#         grad_clip = paddle.nn.ClipGradByGlobalNorm(clip_norm=clip_norm)
+#     else:
+#         grad_clip = None
+#     optim = getattr(optimizer, optim_name)(learning_rate=lr,
+#                                            weight_decay=reg,
+#                                            grad_clip=grad_clip,
+#                                            **config)
+#     return optim(model), lr
 
 
+
+def build_optimizer(model, config):
+    model_without_ddp = model
+    lr_config = config['Optimizer']['lr']
+
+    backbone_lr = lr_config['learning_rate'] * lr_config['lr_backbone_ratio']
+    # param_dict = [
+    #     {'params': [p for n, p in model_without_ddp.named_parameters() if 'backbone' not in n and p.requires_grad],
+    #      'lr': args.lr},
+    #     {'params': [p for n, p in model_without_ddp.named_parameters() if 'backbone' in n and p.requires_grad],
+    #      'lr': backbone_lr},
+    # ]
+    
+    p1, p2 = {}, {}
+    for n, p in model_without_ddp.named_parameters():
+        if 'backbone' not in n and not p.stop_gradient:
+            p1[n] = p
+    for n, p in model_without_ddp.named_parameters():
+        if 'backbone' in n and ("layer2." in n or "layer3." in n or "layer4." in n) and not p.stop_gradient:
+            p2[n] = p
+    
+    # param_dict = [
+    #     {'params': [p for n, p in model_without_ddp.named_parameters() if 'backbone' not in n and not p.stop_gradient],
+    #      'initial_lr': 0.00002, 'lr': lr_config['learning_rate']},
+    #     {'params': [p for n, p in model_without_ddp.named_parameters() if 'backbone' in n and not p.stop_gradient],
+    #      'initial_lr': 0.00002, 'lr': backbone_lr},
+    # ]
+    
+    param_dict = [
+        {'params': [p for n, p in model_without_ddp.named_parameters() if 'backbone' not in n and not p.stop_gradient],
+         'initial_lr': 0.00002, 'learning_rate': lr_config['learning_rate']},
+        {'params': [p for n, p in model_without_ddp.named_parameters() if 'backbone' in n and ("layer2." in n or "layer3." in n or "layer4." in n) and not p.stop_gradient],
+         'initial_lr': 0.00002, 'learning_rate': backbone_lr},
+    ]
+    
+    optimizer = paddle.optimizer.AdamW(learning_rate=lr_config['learning_rate'], parameters=param_dict, weight_decay=lr_config['weight_decay'])
+
+    return optimizer
+
+
+def build_lr_scheduler(optimizer, last_epoch, config):
+    return LinearDecayLR(optimizer, config, last_epoch=last_epoch)
+
+
+class LinearDecayLR(paddle.optimizer.lr.LRScheduler):
+    def __init__(self, optimizer, config, last_epoch=-1, verbose=False):
+        lr_config = config['Optimizer']['lr']
+        epoch_num = config['Global']['epoch_num']
+        warmup_lr = [lr_config['warmup_min_lr'] + ((lr_config['learning_rate'] - lr_config['warmup_min_lr']) * i / lr_config['warmup_epoch']) for i in range(lr_config['warmup_epoch'])]
+        decay_lr = [max(i * lr_config['learning_rate'] / epoch_num, lr_config['min_lr']) for i in range(epoch_num - lr_config['warmup_epoch'])]
+        decay_lr.reverse()
+        self.lrs = warmup_lr + decay_lr + decay_lr[-1:]
+        
+        self.lr_backbone_ratio = lr_config['lr_backbone_ratio']
+        super(LinearDecayLR, self).__init__(learning_rate=lr_config['learning_rate'], last_epoch=last_epoch, verbose=verbose)
+    
+    def get_lr(self):
+        # if not self._get_lr_called_within_step:
+        #     warnings.warn("To get the last learning rate computed by the scheduler, "
+        #                 "please use `get_last_lr()`.", UserWarning) 
+
+        lr = self.lrs[self.last_epoch]
+        return [lr, lr * self.lr_backbone_ratio]
+    

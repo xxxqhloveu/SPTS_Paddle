@@ -1,6 +1,6 @@
 Global:
   use_gpu: true
-  epoch_num: 200
+  epoch_num: 150
   log_smooth_window: 20
   print_batch_step: 10
   save_model_dir: ./output/checkpoint_01
@@ -69,11 +69,28 @@ Optimizer:
   clip_norm: 10.0
   lr:
     name: Linear
-    learning_rate: 0.000000000000000001
-    warmup_epoch: 1
-  regularizer:
-    name: 'L2'
-    # factor: 0.000001 # 0.0004  # 使得factor*learning_rate不超过1e-4
+    learning_rate: 0.0005
+    lr_backbone_ratio: 0.1
+    min_lr: 0.00001
+    warmup_min_lr: 0.0001
+    weight_decay: 0.0001
+    warmup_epoch: 5
+  # regularizer:
+  #   name: 'L2'
+    # factor: 0.00001 # 0.0004  # 使得factor*learning_rate不超过1e-4
+
+# Optimizer:
+#   name: AdamW
+#   beta1: 0.9
+#   beta2: 0.999
+#   clip_norm: 10.0
+#   lr:
+#     name: Linear
+#     learning_rate: 0.0005
+#     # warmup_epoch: 5
+#   # regularizer:
+#   #   name: 'L2'
+#     # factor: 0.00001 # 0.0004  # 使得factor*learning_rate不超过1e-4
 
 Metric:
   name: DetMetric

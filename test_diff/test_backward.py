@@ -4,8 +4,6 @@ import paddle
 import numpy as np
 import torch
 import torch.optim.lr_scheduler as lr_scheduler
-sys.path.append("/data/xiaoqihang/myproject/SPTS_Paddle")
-from reprod_log import ReprodLogger, ReprodDiffHelper
 from PIL import Image
 
 torch.backends.cudnn.deterministic = True
@@ -13,20 +11,31 @@ torch.backends.cudnn.benchmark = False
 FLAGS_cudnn_deterministic = True
 
 sys.path.append("/data/xiaoqihang/myproject/SPTS_Paddle")
+sys.path.append(".")
 from reprod_log import ReprodDiffHelper, ReprodLogger
-diff_helper = ReprodDiffHelper()
-reprod_logger = ReprodLogger()
 
-def make_data():
-    # np.save(np.random.random((3, 720, 1280)), "/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/image.npy")
+
+def make_data(idx=3):
+    # np.save(np.random.random((3, 720, 1280)), "./test_diff/image.npy")
     # import torchvision.transforms.functional as F
-    # image = Image.open("/data/xiaoqihang/dataset/icdar2015/test_images/img_1.jpg")
+    # image = Image.open("./test_diff/img_1.jpg")
     # image_torch = F.to_tensor(image)
-    # np.save("/data/xiaoqihang/myproject/test/image_1.npy", image_torch.detach().cpu().numpy())
-    # image = cv2.imread("/data/xiaoqihang/dataset/icdar2015/test_images/img_1.jpg")
+    # np.save("./test_diff/image_1.npy", image_torch.detach().cpu().numpy())
+    # image = cv2.imread("./test_diff/img_1.jpg")
     # image = image.transpose(2, 0, 1)
-    # image = np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/image.npy")
-    image = np.load("/data/xiaoqihang/myproject/test/image_1.npy")
+    # image = np.load("./test_diff/image_1.npy")
+    
+    # image = np.load(f"./test_diff/image_{idx}.npy")
+    # with open(f"./test_diff/image_{idx}.txt", 'r') as fp:
+    #     lines = fp.read().split('\n')
+    
+    image = np.load(f"/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/image_{idx}.npy")
+    with open(f"/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/image_{idx}.txt", 'r') as fp:
+        lines = fp.read().split('\n')
+        
+        input_seq = np.array([[int(data) for data in lines[0].split(', ')[:-1]]])
+        output_seq = np.array([[int(data) for data in lines[1].split(', ')[:-1]]])
+    
     pad_img = np.zeros((3, 896, 1600))
     pad_img[:, :image.shape[1], :image.shape[2]] = image
     
@@ -35,24 +44,9 @@ def make_data():
     
     # mask = np.zeros(pad_img.shape[1:])
     
-    input_seq = np.array([[
-        1098, 
-        328, 171, 1039, 1069, 1078, 1065, 1088, 1073, 1083, 1000, 1052, 1072, 1069, 1065, 1084, 1082, 1069, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096,
-        395, 170, 1059, 1016, 1022, 1061, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 
-        407, 222, 1022, 1018, 1013, 1016, 1019, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 
-        311, 384, 1035, 1065, 1082, 1080, 1065, 1082, 1075, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 
-    ]])
-    output_seq = np.array([[
-        328, 171, 1039, 1069, 1078, 1065, 1088, 1073, 1083, 1000, 1052, 1072, 1069, 1065, 1084, 1082, 1069, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096,
-        395, 170, 1059, 1016, 1022, 1061, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 
-        407, 222, 1022, 1018, 1013, 1016, 1019, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 
-        311, 384, 1035, 1065, 1082, 1080, 1065, 1082, 1075, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 1096, 
-        1097
-    ]])
-    seq = np.array([[1098]])
     return pad_img, mask, input_seq, output_seq
 
-def build_paddle_model():
+def build_paddle_model(reprod_logger):
     max_iter = 3
     lr = 1e-3
     lr_gamma = 0.1
@@ -65,31 +59,23 @@ def build_paddle_model():
     paddle_model = build_model(config['Architecture'])
     paddle_model = apply_to_static(paddle_model, config, logger)
     paddle_model.train()
-    paddle_model_dict = paddle.load("/data/xiaoqihang/myproject/SPTS_Paddle/pretrain/paddle_ic15.pdparams")
+    paddle_model_dict = paddle.load("./pretrain/paddle_ic15.pdparams")
     paddle_model.set_state_dict(paddle_model_dict)
-
-    # # init loss
-    # criterion_paddle = paddle.nn.CrossEntropyLoss()
-
-    # # init optimizer
-    # lr_scheduler_paddle = paddle.optimizer.lr.StepDecay(
-    #     lr, step_size=max_iter // 3, gamma=lr_gamma)
-    # opt_paddle = paddle.optimizer.AdamW(
-    #     learning_rate=lr,
-    #     parameters=paddle_model.parameters())
 
     from test_main import build_loss
     criterion = build_loss(config['Loss'])
 
-    from test_util import build_optimizer
-    optimizer, lr_scheduler = build_optimizer(
-        config['Optimizer'],
-        epochs=config['Global']['epoch_num'],
-        step_each_epoch=1,
-        model=paddle_model)
+    from test_util import build_optimizer, build_lr_scheduler
+    optimizer = build_optimizer(paddle_model, config)
+    lr_scheduler = build_lr_scheduler(optimizer, -1, config)
+    # optimizer, lr_scheduler = build_optimizer(
+    #     config['Optimizer'],
+    #     epochs=config['Global']['epoch_num'],
+    #     step_each_epoch=1,
+    #     model=paddle_model)
 
-    for idx in range(1):
-        image, mask, input_seq, output_seq = make_data()
+    for idx in range(1, 4):
+        image, mask, input_seq, output_seq = make_data(idx)
         data = {}
         data['image'] = paddle.to_tensor(np.expand_dims(image, axis=0), dtype=paddle.float32)
         data['mask'] = paddle.to_tensor(np.expand_dims(mask, axis=0), dtype=paddle.float32)
@@ -97,35 +83,36 @@ def build_paddle_model():
         sequence = data['sequence']
         output_seq_label = sequence[:, 1, :].astype("int")
 
+        # reprod_logger.add(f"input_{idx}", data['image'].detach().cpu().numpy())
+        
         output = paddle_model(data)
         
-        diff_helper.compare_info({"total_output":output.numpy()}, 
-                                {"total_output":np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/total_output.npy")})
-        diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
+        # diff_helper.compare_info({"total_output":output.numpy()}, 
+        #                         {"total_output":np.load("./test_diff/save_npy/total_output.npy")})
+        # diff_helper.report(path="./test_diff/save_npy/ab_diff.log", diff_threshold=1e-5)
 
         loss = criterion(output, output_seq_label)
 
-        diff_helper.compare_info({"loss":loss.numpy()}, 
-                                {"loss":np.load(f"/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/loss_{idx}.npy")})
-        diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
+        # diff_helper.compare_info({"loss":loss.numpy()}, 
+        #                         {"loss":np.load(f"./test_diff/save_npy/loss_{idx}.npy")})
+        # diff_helper.report(path="./test_diff/save_npy/ab_diff.log", diff_threshold=1e-5)
 
-        # reprod_logger.add("loss_{}".format(idx), loss.cpu().detach().numpy())
-        # reprod_logger.add("lr_{}".format(idx), np.array(lr_scheduler.get_lr()))
+        reprod_logger.add(f"loss_{idx}", loss.numpy())
+        reprod_logger.add(f"lr_{idx}", np.array(lr_scheduler.get_lr()))
+        print(loss.numpy(), lr_scheduler.get_lr())
 
         optimizer.clear_grad()
         loss.backward()
-        optimizer.step()
+        # optimizer.step()
+        lr_scheduler.step()
         pass
-
+    
+    reprod_logger.save("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/save_npy/losses_paddle.npy")
     pass
 
-def build_torch_model():
-    max_iter = 3
-    lr = 1e-3
-    momentum = 0.9
-    lr_gamma = 0.1
+def build_torch_model(reprod_logger):
     # load torch model
-    sys.path.append("/data/xiaoqihang/myproject")
+    sys.path.append("..")
     from SPTS.model import build_model
     from SPTS.utils.parser import DefaultParser
     from SPTS.utils.checkpointer import Checkpointer
@@ -154,9 +141,9 @@ def build_torch_model():
     optimizer = build_optimizer(torch_model, args)
     lr_scheduler = build_lr_scheduler(optimizer, -1, args)
     torch_model.train()
-    
-    for idx in range(1):
-        image, mask, input_seq, output_seq = make_data()
+
+    for idx in range(1, 4):
+        image, mask, input_seq, output_seq = make_data(idx)
         tensor = torch.tensor(image, dtype=torch.float32).unsqueeze(0)
         mask = torch.tensor(mask, dtype=torch.float32).unsqueeze(0)
         samples = NestedTensor(tensor, mask)
@@ -165,79 +152,42 @@ def build_torch_model():
         torch_model = torch_model.to(device)
         samples = samples.to(device)
         seq = seq.to(device)
+
+        # reprod_logger.add(f"input_{idx}", tensor.detach().cpu().numpy())
+
         torch_output = torch_model(samples, seq)
-        np.save("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/total_output.npy", torch_output.detach().cpu().numpy())
-        
+
+        # np.save("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/save_npy/total_output.npy", torch_output.detach().cpu().numpy())
+
         seq = torch.tensor(output_seq, dtype=torch.long)
         seq = seq.to(device)
         loss = criterion(torch_output.transpose(1, 2), seq)
 
-        np.save(f"/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/loss_{idx}.npy", loss.detach().cpu().numpy())
-        # reprod_logger.add("loss_{}".format(idx), loss.cpu().detach().numpy())
-        # reprod_logger.add("lr_{}".format(idx), np.array(lr_scheduler.get_lr()))
+        # np.save(f"/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/save_npy/loss_{idx}.npy", loss.detach().cpu().numpy())
+        reprod_logger.add(f"loss_{idx}", loss.detach().cpu().numpy())
+        reprod_logger.add(f"lr_{idx}", np.array(lr_scheduler.get_lr()))
+        print(loss.detach().cpu().numpy(), lr_scheduler.get_lr())
 
         optimizer.zero_grad()
         loss.backward()
-        optimizer.step()
+        # optimizer.step()
+        lr_scheduler.step()
         pass
-
+    reprod_logger.save("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/save_npy/losses_torch.npy")
     pass
 
 
 if __name__ == "__main__":
-    build_paddle_model()
-    # build_torch_model()
+    reprod_logger = ReprodLogger()
+
+    build_torch_model(reprod_logger)
+    build_paddle_model(reprod_logger)
 
     # load data
     diff_helper = ReprodDiffHelper()
-    torch_info = diff_helper.load_info("./result/losses_ref.npy")
-    paddle_info = diff_helper.load_info("./result/losses_paddle.npy")
+    torch_info = diff_helper.load_info("./test_diff/save_npy/losses_torch.npy")
+    paddle_info = diff_helper.load_info("./test_diff/save_npy/losses_paddle.npy")
 
     # compare result and produce log
     diff_helper.compare_info(torch_info, paddle_info)
     diff_helper.report(path="./result/log/backward_diff.log")
-
-
-
-# label = {
-#     {
-#         "area": 1246.0,
-#         "bbox": [377.0, 117.0, 89.0, 14.0],
-#         "category_id": 1,
-#         "id": 923,
-#         "image_id": 1,
-#         "iscrowd": 0,
-#         "bezier_pts": [377, 117, 405, 117, 434, 117, 463, 117, 465, 130, 436, 130, 407, 130, 378, 130],
-#         "rec": [39, 69, 78, 65, 88, 73, 83, 0, 52, 72, 69, 65, 84, 82, 69, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96]
-#     }, 
-#     {
-#         "area": 459.0,
-#         "bbox": [493.0, 115.0, 27.0, 17.0],
-#         "category_id": 1,
-#         "id": 924,
-#         "image_id": 1,
-#         "iscrowd": 0,
-#         "bezier_pts": [493, 115, 501, 115, 510, 115, 519, 115, 519, 131, 510, 131, 501, 131, 493, 131],
-#         "rec": [59, 16, 22, 61, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96]
-#     }, 
-#     {
-#         "area": 1200.0,
-#         "bbox": [492.0, 151.0, 60.0, 20.0],
-#         "category_id": 1,
-#         "id": 925,
-#         "image_id": 1,
-#         "iscrowd": 0,
-#         "bezier_pts": [492, 151, 511, 151, 531, 151, 551, 151, 551, 170, 531, 170, 511, 170, 492, 170],
-#         "rec": [22, 18, 13, 16, 19, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96]
-#     }, 
-#     {
-#         "area": 705.0,
-#         "bbox": [376.0, 198.0, 47.0, 15.0],
-#         "category_id": 1,
-#         "id": 926,
-#         "image_id": 1,
-#         "iscrowd": 0,
-#         "bezier_pts": [376, 198, 391, 198, 406, 198, 422, 198, 422, 212, 406, 212, 391, 212, 376, 212],
-#         "rec": [35, 65, 82, 80, 65, 82, 75, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96, 96]
-#     }, 
-# }

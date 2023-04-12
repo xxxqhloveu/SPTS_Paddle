@@ -6,10 +6,10 @@ from reprod_log import ReprodDiffHelper, ReprodLogger
 diff_helper = ReprodDiffHelper()
 
 def make_data():
-    # np.save(np.random.random((3, 720, 1280)), "/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/image.npy")
+    # np.save(np.random.random((3, 720, 1280)), "./test_diff/save_npy/image.npy")
     image = cv2.imread("../test_images/img_1.jpg")
     image = image.transpose(2, 0, 1)
-    # image = np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/image.npy")
+    # image = np.load("./test_diff/save_npy/image.npy")
     pad_img = np.zeros((3, 896, 1600))
     pad_img[:, :image.shape[1], :image.shape[2]] = image
     
@@ -24,17 +24,17 @@ def make_data():
 import torch
 @torch.no_grad()
 def load_torch_model():
-    sys.path.append("/data/xiaoqihang/myproject")
+    sys.path.append("../")
     from SPTS.model import build_model
     from SPTS.utils.parser import DefaultParser
     from SPTS.utils.checkpointer import Checkpointer
     from SPTS.utils.nested_tensor import NestedTensor
     parser = DefaultParser()
     args = parser.parse_args()
-    # args.resume = "/data/xiaoqihang/myproject/race/paper/SPTS_paddle/output/source_model_param/ic15.pth"
-    # args.resume = "/data/xiaoqihang/myproject/race/paper/SPTS_paddle/output/source_model_param/ctw1500.pth"
-    # args.resume = "/data/xiaoqihang/myproject/race/paper/SPTS_paddle/output/source_model_param/totaltext.pth"
-    args.resume = "/data/xiaoqihang/myproject/SPTS_Paddle/pretrain/ic15.pth"
+    # args.resume = "./pretrain/ic15.pth"
+    # args.resume = "./pretrain/ctw1500.pth"
+    # args.resume = "./pretrain/totaltext.pth"
+    args.resume = "./pretrain/ic15.pth"
     args.checkpoint_freq = 2
     args.tfm_pre_norm = True
     args.distributed = False
@@ -60,8 +60,8 @@ def load_torch_model():
     torch_prob_np = torch_prob.cpu().numpy()
     print(torch_output_np)
     print(torch_prob_np)
-    np.save("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/torch_output.npy", torch_output_np)
-    np.save("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/torch_prob.npy", torch_prob_np)
+    np.save("./test_diff/save_npy/torch_output.npy", torch_output_np)
+    np.save("./test_diff/save_npy/torch_prob.npy", torch_prob_np)
     pass
 
 import paddle
@@ -75,16 +75,11 @@ def load_paddle_model():
     from test_main import build_model
     paddle_model = build_model(config['Architecture'])
     # load_model(config, paddle_model)
-    # paddle_model_dict = paddle.load("/data/xiaoqihang/myproject/race/paper/SPTS_paddle/e399_ic15_copy.pdparams")
-    # paddle_model_dict = paddle.load("/data/xiaoqihang/myproject/race/paper/SPTS_paddle/paddle_ctw1500.pdparams")
-    # paddle_model_dict = paddle.load("/data/xiaoqihang/myproject/race/paper/SPTS_paddle/paddle_totaltext.pdparams")
-    paddle_model_dict = paddle.load("/data/xiaoqihang/myproject/SPTS_Paddle/pretrain/paddle_ic15.pdparams")
+    # paddle_model_dict = paddle.load("./pretrain/e399_ic15_copy.pdparams")
+    # paddle_model_dict = paddle.load("./pretrain/paddle_ctw1500.pdparams")
+    # paddle_model_dict = paddle.load("./pretrain/paddle_totaltext.pdparams")
+    paddle_model_dict = paddle.load("./pretrain/paddle_ic15.pdparams")
     paddle_model.set_state_dict(paddle_model_dict)
-    # from test_backbone import build_tp_backbone
-    # paddle_model = build_tp_backbone()
-    # paddle_model_dict = paddle_model.state_dict()
-    # # paddle_model_dict = paddle.load("/data/xiaoqihang/myproject/race/paper/SPTS_paddle/t2p_backbone.pdparams")
-    # paddle_model.set_state_dict(paddle_model_dict)
 
     image, mask, seq = make_data()
     data = {}
@@ -98,14 +93,14 @@ def load_paddle_model():
     paddle_prob_np = paddle_prob.numpy()
     print(paddle_output_np)
     print(paddle_prob_np)
-    diff_helper.compare_info({"result_output":paddle_output_np}, {"result_output":np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/torch_output.npy")})
-    diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
+    # diff_helper.compare_info({"result_output":paddle_output_np}, {"result_output":np.load("./test_diff/save_npy/torch_output.npy")})
+    # diff_helper.report(path="./test_diff/save_npy/ab_diff.log", diff_threshold=1e-5)
 
-    diff_helper.compare_info({"result_prob":paddle_prob_np}, {"result_prob":np.load("/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/torch_prob.npy")})
-    diff_helper.report(path="/data/xiaoqihang/myproject/SPTS_Paddle/test_diff/ab_diff.log", diff_threshold=1e-5)
+    # diff_helper.compare_info({"result_prob":paddle_prob_np}, {"result_prob":np.load("./test_diff/save_npy/torch_prob.npy")})
+    # diff_helper.report(path="./test_diff/save_npy/ab_diff.log", diff_threshold=1e-5)
 
-    # np.save("/data/xiaoqihang/myproject/race/paper/SPTS_paddle/save_test_result/torch_output.npy", paddle_output_np)
-    # np.save("/data/xiaoqihang/myproject/race/paper/SPTS_paddle/save_test_result/torch_prob.npy", paddle_prob_np)
+    # np.save("./test_diff/save_npy/torch_output.npy", paddle_output_np)
+    # np.save("./test_diff/save_npy/torch_prob.npy", paddle_prob_np)
     pass
 
 
